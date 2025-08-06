@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+
+{% block title %}员工工作台 - 科室工作任务推进表{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="fas fa-user-circle me-2"></i>员工工作台</h2>
+            <p class="text-muted">查看我的任务，更新进度，添加个人任务</p>
+        </div>
+    </div>
+
+    <!-- 通知区域 -->
+    {% if unread_notifications %}
+    <div class="alert alert-info alert-dismissible fade show" role="alert">
+        <strong><i class="fas fa-bell me-2"></i>您有 {{ unread_notifications|length }} 条未读通知！</strong>
+        <ul class="mb-0 mt-2">
+            {% for notification in unread_notifications %}
+            <li>{{ notification.message }} <small class="text-muted">({{ notification.created_at.strftime('%m-%d %H:%M') }})</small></li>
+            {% endfor %}
+        </ul>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" onclick="markAllNotificationsRead()"></button>
+    </div>
+    {% endif %}
+
+    <!-- 统计卡片 -->
+    <div class="row mb-4">
+        <div class="col-md-3"><div class="card bg-primary text-white"><div class="card-body"><div class="d-flex justify-content-between"><div><h4 id="total-tasks-stat">{{ total_tasks }}</h4><p class="mb-0">我的任务</p></div><i class="fas fa-tasks fa-2x align-self-center"></i></div></div></div></div>
+        <div class="col-md-3"><div class="card bg-warning text-white"><div class="card-body"><div class="d-flex justify-content-between"><div><h4 id="pending-tasks-stat">{{ pending_tasks }}</h4><p class="mb-0">待处理</p></div><i class="fas fa-clock fa-2x align-self-center"></i></div></div></div></div>
+        <div class="col-md-3"><div class="card bg-success text-white"><div class="card-body"><div class="d-flex justify-content-between"><div><h4 id="completed-tasks-stat">{{ completed_tasks }}</h4><p class="mb-0">已完成</p></div><i class="fas fa-check-circle fa-2x align-self-center"></i></div></div></div></div>
+        <div class="col-md-3"><div class="card bg-danger text-white"><div class="card-body"><div class="d-flex justify-content-between"><div><h4 id="overdue-tasks-stat">{{ overdue_tasks }}</h4><p class="mb-0">已逾期</p></div><i class="fas fa-exclamation-triangle fa-2x align-self-center"></i></div></div></div></div>
+    </div>
+
+    <!-- 操作按钮 -->
+    <div class="row mb-4">
+        <div class="col">
+            <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addPersonalTaskModal"><i class="fas fa-plus me-1"></i>添加个人任务</button>
+            <button class="btn btn-info" onclick="refreshTasks()"><i class="fas fa-sync me-1"></i>刷新任务</button>
+        </div>
+    </div>
+
+    <!-- 任务列表 -->
+    <div class="card shadow-sm">
+        <div class="card-header"><h5 class="mb-0"><i class="fas fa-list me-2"></i>我的任务列表</h5></div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-striped table-hover" id="tasksTable">
+                    <thead>
+                        <tr><th>任务标题</th><th>类别</th><th>分配者</th><th>截止日期</th><th>状态</th><th>完成情况</th><th>操作</th></tr>
+                    </thead>
+                    <tbody id="tasks-table-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 添加个人任务模态框 -->
+<div class="modal fade" id="addPersonalTaskModal" tabindex="-1">
+    <div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">添加个人任务</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            <form id="addPersonalTaskForm">
+                <div class="mb-3"><label for="personalTaskTitle" class="form-label">任务标题 *</label><input type="text" class="form-control" id="personalTaskTitle" name="title" required></div>
+                <div class="mb-3"><label for="personalTaskDescription" class="form-label">任务描述</label><textarea class="form-control" id="personalTaskDescription" name="description" rows="3"></textarea></div>
+                <div class="mb-3"><label for="personalTaskCategory" class="form-label">任务类别 *</label><select class="form-select" id="personalTaskCategory" name="category_id" required><option value="">请选择类别</option>{% for category in categories %}<option value="{{ category.id }}">{{ category.name }}</option>{% endfor %}</select></div>
+                <div class="mb-3"><label for="personalTaskDueDate" class="form-label">截止日期 *</label><input type="date" class="form-control" id="personalTaskDueDate" name="due_date" required></div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+            <button type="button" class="btn btn-success" onclick="addPersonalTask()" id="addPersonalTaskBtn">添加任务</button>
+        </div>
+    </div></div>
+</div>
+
+<!-- 查看任务详情 Modal -->
+<div class="modal fade" id="viewTaskModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title" id="viewTaskTitleEmp">任务详情</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body" id="viewTaskBodyEmp"></div>
+            <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const addPersonalTaskModal = new bootstrap.Modal(document.getElementById('addPersonalTaskModal'));
+const viewTaskModal = new bootstrap.Modal(document.getElementById('viewTaskModal'));
+
+// --- RENDER FUNCTIONS ---
+function renderMyTasksTable(tasks) {
+    const tbody = document.getElementById('tasks-table-body');
+    tbody.innerHTML = '';
+    if (tasks.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">太棒了！您当前没有待办任务</td></tr>';
+        return;
+    }
+    tasks.forEach(task => {
+        let rowClass = '';
+        if (task.urgency === 'overdue') rowClass = 'table-danger';
+        else if (['today', 'tomorrow', 'soon'].includes(task.urgency) && task.status !== 'completed') rowClass = 'table-warning';
+
+        let dueDateHtml = task.due_date;
+        if (task.urgency === 'today') dueDateHtml += '<br><small class="text-danger fw-bold">今天到期</small>';
+        else if (task.urgency === 'tomorrow') dueDateHtml += '<br><small class="text-warning fw-bold">明天到期</small>';
+        else if (task.urgency === 'overdue') dueDateHtml += `<br><small class="text-danger fw-bold">已逾期 ${-task.days_left} 天</small>`;
+        else if (task.urgency === 'soon') dueDateHtml += `<br><small class="text-info">${task.days_left} 天后到期</small>`;
+
+        const completionMap = {
+            'on_time': '<span class="badge bg-success">按时完成</span>', 'completed_late': '<span class="badge bg-warning">超时完成</span>',
+            'overdue_incomplete': '<span class="badge bg-danger">超时未完成</span>'
+        };
+        const completionHtml = completionMap[task.completion_status] || '<span class="text-muted">-</span>';
+
+        const row = `
+            <tr class="${rowClass}">
+                <td><strong>${task.title}</strong></td>
+                <td><span class="badge bg-secondary">${task.category}</span></td>
+                <td>${task.creator}</td>
+                <td>${dueDateHtml}</td>
+                <td><select class="form-select form-select-sm" onchange="updateTaskStatus(${task.id}, this.value)">
+                    <option value="pending" ${task.status === 'pending' ? 'selected' : ''}>待处理</option>
+                    <option value="in_progress" ${task.status === 'in_progress' ? 'selected' : ''}>进行中</option>
+                    <option value="completed" ${task.status === 'completed' ? 'selected' : ''}>已完成</option>
+                </select></td>
+                <td>${completionHtml}</td>
+                <td><button class="btn btn-sm btn-outline-info" onclick="viewTask(${task.id})"><i class="fas fa-eye"></i></button></td>
+            </tr>`;
+        tbody.innerHTML += row;
+    });
+}
+
+function updateStats(tasks) {
+    document.getElementById('total-tasks-stat').innerText = tasks.length;
+    document.getElementById('pending-tasks-stat').innerText = tasks.filter(t => ['pending', 'in_progress'].includes(t.status)).length;
+    document.getElementById('completed-tasks-stat').innerText = tasks.filter(t => t.status === 'completed').length;
+    document.getElementById('overdue-tasks-stat').innerText = tasks.filter(t => t.status === 'overdue').length;
+}
+
+// --- API & EVENT HANDLERS ---
+function loadMyTasks() {
+    const tbody = document.getElementById('tasks-table-body');
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-5"><div class="spinner-border text-primary"></div></td></tr>';
+    fetch('/api/get_tasks')
+        .then(response => response.json())
+        .then(tasks => {
+            renderMyTasksTable(tasks);
+            updateStats(tasks);
+        })
+        .catch(error => {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger py-4">加载任务失败</td></tr>';
+        });
+}
+
+function addPersonalTask() {
+    const btn = document.getElementById('addPersonalTaskBtn');
+    const originalText = btn.innerHTML;
+    const form = document.getElementById('addPersonalTaskForm');
+    if (!form.checkValidity()) { form.reportValidity(); return; }
+
+    const data = {
+        title: document.getElementById('personalTaskTitle').value,
+        description: document.getElementById('personalTaskDescription').value,
+        category_id: document.getElementById('personalTaskCategory').value,
+        due_date: document.getElementById('personalTaskDueDate').value,
+        assignee_id: {{ current_user.id }}
+    };
+
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 添加中...';
+    btn.disabled = true;
+
+    fetch('/api/create_task', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+    })
+    .then(res => res.json())
+    .then(result => {
+        if (result.success) {
+            showToast('个人任务添加成功！');
+            addPersonalTaskModal.hide();
+            form.reset();
+            loadMyTasks();
+        } else {
+            showToast('添加失败：' + result.message, 'danger');
+        }
+    }).finally(() => {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    });
+}
+
+function updateTaskStatus(taskId, status) {
+    showToast('正在更新状态...', 'success');
+    fetch('/api/update_task_status', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ task_id: taskId, status: status })
+    })
+    .then(res => res.json())
+    .then(result => {
+        if (result.success) {
+            showToast('状态更新成功!', 'success');
+            loadMyTasks();
+        } else {
+            showToast('更新失败：' + result.message, 'danger');
+        }
+    });
+}
+
+function refreshTasks() {
+    loadMyTasks();
+}
+
+function viewTask(taskId) {
+    const modalBody = document.getElementById('viewTaskBodyEmp');
+    modalBody.innerHTML = '<div class="text-center p-5"><div class="spinner-border"></div></div>';
+    viewTaskModal.show();
+    fetch(`/api/get_task_details/${taskId}`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('viewTaskTitleEmp').innerText = data.title;
+                modalBody.innerHTML = `
+                    <p class="lead">${data.description || '<i>无详细描述。</i>'}</p>
+                    <ul class="list-group">
+                        <li class="list-group-item"><strong>分配者:</strong> ${data.creator}</li>
+                        <li class="list-group-item"><strong>类别:</strong> <span class="badge bg-secondary">${data.category}</span></li>
+                        <li class="list-group-item"><strong>截止日期:</strong> ${data.due_date}</li>
+                        <li class="list-group-item"><strong>创建时间:</strong> ${data.created_at}</li>
+                    </ul>`;
+            } else {
+                modalBody.innerHTML = `<div class="alert alert-danger">${data.message}</div>`;
+            }
+        });
+}
+
+
+function markAllNotificationsRead() {
+    const notificationIds = [{% for n in unread_notifications %}{{ n.id }},{% endfor %}];
+    fetch('/api/mark_notifications_read', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ notification_ids: notificationIds })
+    }).then(res => {
+        if (res.ok) console.log('Notifications marked as read.');
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadMyTasks();
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    document.getElementById('personalTaskDueDate').value = tomorrow.toISOString().split('T')[0];
+});
+</script>
+{% endblock %}

@@ -1,0 +1,404 @@
+{% extends "base.html" %}
+
+{% block title %}主任工作台 - 科室任务管理系统{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- 页面标题 -->
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="fas fa-user-shield me-2"></i>主任工作台</h2>
+            <p class="text-muted">全局任务监控、分配与管理</p>
+        </div>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="row mb-4">
+        <div class="col-xl-3 col-md-6 mb-4"><div class="card bg-primary text-white h-100"><div class="card-body"><h4 id="stat-total">{{ total_tasks }}</h4><p class="mb-0">总任务数</p></div><a href="javascript:void(0)" onclick="filterTasks('all')" class="card-footer text-white"><span class="float-start">查看全部</span><span class="float-end"><i class="fas fa-chevron-right"></i></span></a></div></div>
+        <div class="col-xl-3 col-md-6 mb-4"><div class="card bg-warning text-dark h-100"><div class="card-body"><h4 id="stat-pending">{{ pending_tasks }}</h4><p class="mb-0">待处理</p></div><a href="javascript:void(0)" onclick="filterTasks('pending')" class="card-footer text-dark"><span class="float-start">查看详情</span><span class="float-end"><i class="fas fa-chevron-right"></i></span></a></div></div>
+        <div class="col-xl-3 col-md-6 mb-4"><div class="card bg-success text-white h-100"><div class="card-body"><h4 id="stat-completed">{{ completed_tasks }}</h4><p class="mb-0">已完成</p></div><a href="javascript:void(0)" onclick="filterTasks('completed')" class="card-footer text-white"><span class="float-start">查看详情</span><span class="float-end"><i class="fas fa-chevron-right"></i></span></a></div></div>
+        <div class="col-xl-3 col-md-6 mb-4"><div class="card bg-danger text-white h-100"><div class="card-body"><h4 id="stat-overdue">{{ overdue_tasks }}</h4><p class="mb-0">已逾期</p></div><a href="javascript:void(0)" onclick="filterTasks('overdue')" class="card-footer text-white"><span class="float-start">查看详情</span><span class="float-end"><i class="fas fa-chevron-right"></i></span></a></div></div>
+    </div>
+
+    <!-- 操作按钮 -->
+    <div class="row mb-4">
+        <div class="col">
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTaskModal"><i class="fas fa-plus-circle me-1"></i> 分配新任务</button>
+            <button class="btn btn-dark" data-bs-toggle="modal" data-bs-target="#addEmployeeModal"><i class="fas fa-user-plus me-1"></i> 添加员工</button>
+            <button class="btn btn-info" data-bs-toggle="modal" data-bs-target="#manageCategoriesModal" onclick="loadAndShowCategories()"><i class="fas fa-tags me-1"></i> 管理任务类别</button>
+            <button class="btn btn-secondary" onclick="loadTasks()"><i class="fas fa-sync-alt me-1"></i> 刷新数据</button>
+            <a href="{{ url_for('export_tasks') }}" class="btn btn-outline-success"><i class="fas fa-file-excel me-1"></i> 导出Excel台账</a>
+        </div>
+    </div>
+    
+    <!-- 任务列表 -->
+    <div class="row">
+        <div class="col">
+            <div class="card shadow-sm">
+                <div class="card-header"><h5 class="mb-0" id="task-list-title"><i class="fas fa-list-ul me-2"></i> 全局任务列表</h5></div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead>
+                                <tr>
+                                    <th>任务标题</th><th>类别</th><th>负责人</th><th>创建者</th><th>截止日期</th><th>状态</th><th>完成情况</th><th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="task-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========= MODALS START ========= -->
+
+<!-- 1. 创建任务 Modal -->
+<div class="modal fade" id="createTaskModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">分配新任务</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <form id="createTaskForm">
+                    <div class="mb-3"><label for="taskTitle" class="form-label">任务标题 *</label><input type="text" class="form-control" id="taskTitle" required></div>
+                    <div class="mb-3"><label for="taskDesc" class="form-label">任务描述</label><textarea class="form-control" id="taskDesc" rows="3"></textarea></div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3"><label for="taskAssignee" class="form-label">负责人 *</label><select class="form-select" id="taskAssignee" required><option value="">请选择员工...</option>{% for employee in employees %}<option value="{{ employee.id }}">{{ employee.name }}</option>{% endfor %}</select></div>
+                        <div class="col-md-6 mb-3"><label for="taskCategory" class="form-label">任务类别 *</label><select class="form-select" id="taskCategory" required><option value="">请选择类别...</option>{% for category in categories %}<option value="{{ category.id }}">{{ category.name }}</option>{% endfor %}</select></div>
+                    </div>
+                    <div class="mb-3"><label for="taskDueDate" class="form-label">截止日期 *</label><input type="date" class="form-control" id="taskDueDate" required></div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="createTask()" id="createTaskBtn">确认分配</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 2. 添加员工 Modal -->
+<div class="modal fade" id="addEmployeeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">添加新员工</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <form id="addEmployeeForm">
+                    <div class="mb-3"><label for="empName" class="form-label">姓名 *</label><input type="text" class="form-control" id="empName" required></div>
+                    <div class="mb-3"><label for="empUsername" class="form-label">登录用户名 *</label><input type="text" class="form-control" id="empUsername" required></div>
+                    <div class="mb-3"><label for="empPassword" class="form-label">初始密码 *</label><input type="password" class="form-control" id="empPassword" required></div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-dark" onclick="addEmployee()" id="addEmployeeBtn">确认添加</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 3. 管理任务类别 Modal -->
+<div class="modal fade" id="manageCategoriesModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">管理任务类别</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <h6>已有类别</h6>
+                <div id="category-list-container" class="mb-4"></div>
+                <hr>
+                <h6>添加新类别</h6>
+                <form id="addCategoryForm" class="row g-3 align-items-center">
+                    <div class="col-auto flex-grow-1"><input type="text" class="form-control" id="newCategoryName" placeholder="新类别名称" required></div>
+                    <div class="col-auto"><button type="submit" class="btn btn-info" id="addCategoryBtn">添加</button></div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 4. 查看任务详情 Modal -->
+<div class="modal fade" id="viewTaskDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title" id="viewTaskTitle">任务详情</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body" id="viewTaskBody"></div>
+            <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button></div>
+        </div>
+    </div>
+</div>
+
+<!-- ========= MODALS END ========= -->
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let allTasks = []; 
+    const createTaskModal = new bootstrap.Modal(document.getElementById('createTaskModal'));
+    const addEmployeeModal = new bootstrap.Modal(document.getElementById('addEmployeeModal'));
+    const manageCategoriesModal = new bootstrap.Modal(document.getElementById('manageCategoriesModal'));
+    const viewTaskDetailsModal = new bootstrap.Modal(document.getElementById('viewTaskDetailsModal'));
+
+    // --- UTILITY & RENDER FUNCTIONS ---
+    function renderStatusBadge(status) {
+        const map = {
+            'pending': { bg: 'secondary', text: '待处理' },
+            'in_progress': { bg: 'primary', text: '进行中' },
+            'completed': { bg: 'success', text: '已完成' },
+            'overdue': { bg: 'danger', text: '已逾期' }
+        };
+        const s = map[status] || { bg: 'light', text: status };
+        return `<span class="badge bg-${s.bg}">${s.text}</span>`;
+    }
+
+    function renderCompletionStatus(status) {
+        const map = {
+            'on_time': { bg: 'success', text: '按时完成' },
+            'completed_late': { bg: 'warning', text: '超时完成' },
+            'overdue_incomplete': { bg: 'danger', text: '超时未完成' }
+        };
+        if (!status || !map[status]) return '<span class="text-muted">-</span>';
+        const s = map[status];
+        return `<span class="badge bg-${s.bg}">${s.text}</span>`;
+    }
+
+    function renderTable(tasksToRender) {
+        const tbody = document.getElementById('task-table-body');
+        tbody.innerHTML = '';
+        if (tasksToRender.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">没有符合条件的任务</td></tr>';
+            return;
+        }
+        tasksToRender.forEach(task => {
+            const row = `
+                <tr class="${task.status === 'overdue' ? 'table-danger' : ''}">
+                    <td><strong>${task.title}</strong><br><small class="text-muted">${task.description ? task.description.substring(0, 40) + '...' : ''}</small></td>
+                    <td><span class="badge bg-dark">${task.category}</span></td>
+                    <td>${task.assignee}</td>
+                    <td>${task.creator}</td>
+                    <td>${task.due_date}</td>
+                    <td>${renderStatusBadge(task.status)}</td>
+                    <td>${renderCompletionStatus(task.completion_status)}</td>
+                    <td><button class="btn btn-sm btn-outline-info" onclick="viewTaskDetails(${task.id})"><i class="fas fa-eye"></i></button></td>
+                </tr>`;
+            tbody.innerHTML += row;
+        });
+    }
+
+    function updateStats(tasks) {
+        document.getElementById('stat-total').innerText = tasks.length;
+        document.getElementById('stat-pending').innerText = tasks.filter(t => ['pending', 'in_progress'].includes(t.status)).length;
+        document.getElementById('stat-completed').innerText = tasks.filter(t => t.status === 'completed').length;
+        document.getElementById('stat-overdue').innerText = tasks.filter(t => t.status === 'overdue').length;
+    }
+
+    // --- API & EVENT HANDLERS ---
+    function loadTasks() {
+        document.getElementById('task-table-body').innerHTML = '<tr><td colspan="8" class="text-center py-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></td></tr>';
+        document.getElementById('task-list-title').innerHTML = '<i class="fas fa-list-ul me-2"></i> 全局任务列表';
+        fetch('/api/get_tasks')
+            .then(response => response.json())
+            .then(tasks => {
+                allTasks = tasks;
+                renderTable(allTasks);
+                updateStats(allTasks);
+            })
+            .catch(error => {
+                console.error('加载任务失败:', error);
+                document.getElementById('task-table-body').innerHTML = '<tr><td colspan="8" class="text-center text-danger py-4">加载失败，请检查网络或联系管理员</td></tr>';
+            });
+    }
+
+    function filterTasks(statusFilter) {
+        const title = document.getElementById('task-list-title');
+        let filteredTasks = [];
+        const titleMap = {'all': '全局任务列表', 'pending': '待处理任务', 'completed': '已完成任务', 'overdue': '已逾期任务'};
+        title.innerHTML = `<i class="fas fa-list-ul me-2"></i> ${titleMap[statusFilter]}`;
+        
+        if (statusFilter === 'all') filteredTasks = allTasks;
+        else if (statusFilter === 'pending') filteredTasks = allTasks.filter(t => ['pending', 'in_progress'].includes(t.status));
+        else if (statusFilter === 'overdue') filteredTasks = allTasks.filter(t => t.status === 'overdue' || (t.completion_status === 'overdue_incomplete'));
+        else filteredTasks = allTasks.filter(t => t.status === statusFilter);
+        
+        renderTable(filteredTasks);
+    }
+    
+    function viewTaskDetails(taskId) {
+        const modalBody = document.getElementById('viewTaskBody');
+        modalBody.innerHTML = '<div class="text-center p-5"><div class="spinner-border"></div></div>';
+        viewTaskDetailsModal.show();
+        fetch(`/api/get_task_details/${taskId}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('viewTaskTitle').innerText = data.title;
+                    modalBody.innerHTML = `
+                        <p>${data.description || '<i>无详细描述</i>'}</p>
+                        <ul class="list-group">
+                            <li class="list-group-item d-flex justify-content-between"><strong>负责人:</strong> ${data.assignee}</li>
+                            <li class="list-group-item d-flex justify-content-between"><strong>创建者:</strong> ${data.creator}</li>
+                            <li class="list-group-item d-flex justify-content-between"><strong>类别:</strong> <span class="badge bg-dark">${data.category}</span></li>
+                            <li class="list-group-item d-flex justify-content-between"><strong>状态:</strong> ${renderStatusBadge(data.status)}</li>
+                            <li class="list-group-item d-flex justify-content-between"><strong>完成情况:</strong> ${renderCompletionStatus(data.completion_status)}</li>
+                            <li class="list-group-item d-flex justify-content-between"><strong>截止日期:</strong> ${data.due_date}</li>
+                            <li class="list-group-item d-flex justify-content-between"><strong>创建时间:</strong> ${data.created_at}</li>
+                            <li class="list-group-item d-flex justify-content-between"><strong>完成时间:</strong> ${data.completed_at || '-'}</li>
+                        </ul>`;
+                } else {
+                    modalBody.innerHTML = `<div class="alert alert-danger">${data.message}</div>`;
+                }
+            });
+    }
+
+    function createTask() {
+        const btn = document.getElementById('createTaskBtn');
+        const originalText = btn.innerHTML;
+        const form = document.getElementById('createTaskForm');
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+
+        const data = {
+            title: document.getElementById('taskTitle').value,
+            description: document.getElementById('taskDesc').value,
+            assignee_id: document.getElementById('taskAssignee').value,
+            category_id: document.getElementById('taskCategory').value,
+            due_date: document.getElementById('taskDueDate').value,
+        };
+
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 分配中...';
+        btn.disabled = true;
+
+        fetch('/api/create_task', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        })
+        .then(res => res.json())
+        .then(result => {
+            if (result.success) {
+                showToast('任务分配成功!');
+                createTaskModal.hide();
+                form.reset();
+                loadTasks();
+            } else {
+                showToast('分配失败: ' + result.message, 'danger');
+            }
+        }).finally(() => {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        });
+    }
+
+    function addEmployee() {
+        const btn = document.getElementById('addEmployeeBtn');
+        const originalText = btn.innerHTML;
+        const form = document.getElementById('addEmployeeForm');
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+
+        const data = {
+            name: document.getElementById('empName').value,
+            username: document.getElementById('empUsername').value,
+            password: document.getElementById('empPassword').value,
+        };
+
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 添加中...';
+        btn.disabled = true;
+
+        fetch('/api/add_employee', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        })
+        .then(res => res.json())
+        .then(result => {
+            if (result.success) {
+                showToast('员工添加成功!');
+                addEmployeeModal.hide();
+                form.reset();
+                // Optionally refresh the page or just the assignee list
+                location.reload(); 
+            } else {
+                showToast('添加失败: ' + result.message, 'danger');
+            }
+        }).finally(() => {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        });
+    }
+    
+    function loadAndShowCategories() {
+        const container = document.getElementById('category-list-container');
+        container.innerHTML = '<div class="spinner-border spinner-border-sm"></div>';
+        fetch('/api/categories')
+            .then(res => res.json())
+            .then(categories => {
+                container.innerHTML = '';
+                if(categories.length === 0) {
+                    container.innerHTML = '<p class="text-muted">暂无类别</p>';
+                    return;
+                }
+                const list = document.createElement('ul');
+                list.className = 'list-group';
+                categories.forEach(cat => {
+                    list.innerHTML += `<li class="list-group-item d-flex justify-content-between align-items-center">${cat.name}<button class="btn btn-sm btn-outline-danger" onclick="deleteCategory(${cat.id})"><i class="fas fa-trash-alt"></i></button></li>`;
+                });
+                container.appendChild(list);
+            });
+    }
+
+    document.getElementById('addCategoryForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const btn = document.getElementById('addCategoryBtn');
+        const originalText = btn.innerHTML;
+        const input = document.getElementById('newCategoryName');
+        const name = input.value.trim();
+        if (!name) return;
+
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+        btn.disabled = true;
+
+        fetch('/api/categories', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name: name })
+        })
+        .then(res => res.json())
+        .then(result => {
+            if (result.success) {
+                showToast('类别添加成功!');
+                input.value = '';
+                loadAndShowCategories(); // Refresh list
+            } else {
+                showToast('添加失败: ' + result.message, 'danger');
+            }
+        }).finally(() => {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        });
+    });
+
+    function deleteCategory(categoryId) {
+        if (!confirm('确定要删除这个类别吗？如果该类别下有任务，将无法删除。')) return;
+
+        fetch(`/api/categories/${categoryId}`, { method: 'DELETE' })
+            .then(res => res.json())
+            .then(result => {
+                if (result.success) {
+                    showToast('类别删除成功!');
+                    loadAndShowCategories();
+                } else {
+                    showToast('删除失败: ' + result.message, 'danger');
+                }
+            });
+    }
+
+    // --- INITIAL LOAD ---
+    document.addEventListener('DOMContentLoaded', () => loadTasks());
+</script>
+{% endblock %}
